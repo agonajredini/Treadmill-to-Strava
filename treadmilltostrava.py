@@ -11,12 +11,53 @@ from datetime import datetime
 
 load_dotenv()
 
+access_token = os.getenv('STRAVA_ACCESS_TOKEN')
+refresh_token = os.getenv('STRAVA_REFRESH_TOKEN')
 
 STRAVA_API_URL = "https://www.strava.com/api/v3"
 STRAVA_AUTH_URL = "https://www.strava.com/oauth/authorize"
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 
+def refresh_access_token():
+    global access_token  # Ensure you update the global access_token variable
+    token_url = STRAVA_TOKEN_URL
+    params = {
+        "client_id": os.getenv('STRAVA_CLIENT_ID'),
+        "client_secret": os.getenv('STRAVA_CLIENT_SECRET'),
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+    response = requests.post(token_url, params)
+    response_data = response.json()  # Fix response.data to response.json()
+    if response.status_code == 200:
+        new_access_token = response_data["access_token"]
+        new_refresh_token = response_data["refresh_token"]
+        
+        # Update .env file with new tokens
+        with open('.env', 'r') as env_file:
+            lines = env_file.readlines()
+        
+        with open(".env", "w") as env_file:  # Use 'w' mode to overwrite the file
+            for line in lines:
+                if line.startswith("STRAVA_ACCESS_TOKEN"):
+                    env_file.write(f'STRAVA_ACCESS_TOKEN={new_access_token}\n')
+                elif line.startswith("STRAVA_REFRESH_TOKEN"):
+                    env_file.write(f'STRAVA_REFRESH_TOKEN={new_refresh_token}\n')
+                else:
+                    env_file.write(line)
+                    
+        access_token = new_access_token  # Update the global access_token
+        print("Token refreshed successfully!")
+        return new_access_token
+    else:
+        print(f"Failed to refresh token: {response.content}")
+        return None
+    
 def get_strava_access_token():
+    global access_token  # Ensure you're using the global access_token
+    if access_token:  # If there's an existing valid token, no need to authenticate
+        return access_token
+    
     client_id = os.getenv('STRAVA_CLIENT_ID')
     client_secret = os.getenv('STRAVA_CLIENT_SECRET')
     redirect_url = "https://tekksparrow-programs.github.io/website/"
@@ -33,8 +74,20 @@ def get_strava_access_token():
         client_secret=client_secret,
         authorization_response=authorization_response,
         include_client_id=True,
-                                )
-    return token
+    )
+    
+    access_token = token['access_token']  # Save the new access_token globally
+    
+    with open('.env', 'r') as env_file:
+        content = env_file.read()
+        
+        if 'STRAVA_ACCESS_TOKEN' not in content or 'STRAVA_REFRESH_TOKEN' not in content:
+            with open('.env', 'a') as env_file:
+                env_file.write(f"STRAVA_ACCESS_TOKEN={access_token}\n")
+                env_file.write(f"STRAVA_REFRESH_TOKEN={token['refresh_token']}\n")
+        else:
+            print("Tokens already exist in the .env file.")
+    return access_token
 
 def get_image_datetime(image_path):
     # Open the image and get the EXIF data
@@ -54,7 +107,22 @@ def get_image_datetime(image_path):
     raise ValueError("No DateTimeOriginal tag found in EXIF data.")
 
 def upload_activity_to_strava(time,distance):
-      # Extract the date and time when the picture was taken
+    global access_token
+    if not access_token:
+        print("Access token not found. Please authenticate.")
+        access_token = get_strava_access_token()
+    
+    headers = {"Authorization": f"Bearer {access_token}"}
+    test_response = requests.get(f"{STRAVA_API_URL}/athlete", headers=headers)
+    
+    if test_response.status_code == 401:
+        print("Access token expired. Refreshing token...")
+        access_token = refresh_access_token()
+        if not access_token:
+            print("Failed to refresh token. Please authenticate.")
+            return
+        
+    # Extract the date and time when the picture was taken
     try:
         start_date_local = get_image_datetime(image_path)
         # Ensure the format is correct for Strava (ISO 8601 format)
@@ -62,7 +130,7 @@ def upload_activity_to_strava(time,distance):
     except ValueError as e:
         print(f"Error extracting date and time from image: {e}")
         return
-    token = get_strava_access_token()
+    
     activity_data = {
         "name": "Treadmill Run",
         "type": "Run",
@@ -71,7 +139,6 @@ def upload_activity_to_strava(time,distance):
         "distance": float(distance) * 1000,
         "description": "Uploaded from TreadmilltoStrava",
     }
-    headers = {"Authorization": f"Bearer {token['access_token']}"}
     response = requests.post(f"{STRAVA_API_URL}/activities", headers=headers, data=activity_data)
     print("Response Status Code:", response.status_code)
     try:
