@@ -140,11 +140,6 @@ def upload_activity_to_strava(time,distance):
         "description": "Uploaded from TreadmilltoStrava",
     }
     response = requests.post(f"{STRAVA_API_URL}/activities", headers=headers, data=activity_data)
-    print("Response Status Code:", response.status_code)
-    try:
-        print("Response Content:", response.json())  # Print the response as JSON
-    except ValueError:
-        print("Response Content is not in JSON format:", response.content)
     if response.status_code == 201:
         print("Activity uploaded successfully!")
     else:
