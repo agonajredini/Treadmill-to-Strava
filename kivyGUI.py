@@ -1,30 +1,29 @@
-import kivy
+import os
+import re
+import webbrowser
+import threading
+from datetime import datetime
+from PIL import Image, ImageTk
 from kivy.app import App
-from kivy.uix.button import Button
-from kivy.uix.image import Image
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.label import Label
+from kivy.uix.button import Button
+from kivy.uix.image import Image as KivyImage
+from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
-from kivy.uix.spinner import Spinner
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.modalview import ModalView
 from kivy.uix.filechooser import FileChooserIconView
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.switch import Switch
 from kivy.clock import Clock
-import threading
-from PIL import Image as PILImage
-from PIL.ExifTags import TAGS
 from google.cloud import vision
-import os
 import io
-import re
 import requests
-from datetime import datetime
 from dotenv import load_dotenv
 from requests_oauthlib import OAuth2Session
+from PIL.ExifTags import TAGS
+
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +51,7 @@ def refresh_access_token():
         new_access_token = response_data["access_token"]
         new_refresh_token = response_data["refresh_token"]
 
+        # Update .env file with new tokens
         with open('.env', 'r') as env_file:
             lines = env_file.readlines()
 
@@ -72,8 +72,51 @@ def refresh_access_token():
         return None
 
 
+def get_strava_access_token():
+    global access_token
+    if access_token:
+        return access_token
+
+    client_id = os.getenv('STRAVA_CLIENT_ID')
+    client_secret = os.getenv('STRAVA_CLIENT_SECRET')
+    redirect_url = "https://tekksparrow-programs.github.io/website/"
+
+    session = OAuth2Session(client_id=client_id, redirect_uri=redirect_url)
+    session.scope = ["activity:write"]
+    auth_link = session.authorization_url(STRAVA_AUTH_URL)
+    webbrowser.open(auth_link[0])
+
+    # Get the authorization response from user
+    authorization_response = input("Please enter the full callback URL after you authorize the app in your browser: ")
+    if not authorization_response:
+        print("Authorization failed. No URL was provided.")
+        return None
+
+    token = session.fetch_token(
+        token_url=STRAVA_TOKEN_URL,
+        client_id=client_id,
+        client_secret=client_secret,
+        authorization_response=authorization_response,
+        include_client_id=True,
+    )
+
+    access_token = token['access_token']
+
+    with open('.env', 'r') as env_file:
+        content = env_file.read()
+
+        if 'STRAVA_ACCESS_TOKEN' not in content or 'STRAVA_REFRESH_TOKEN' not in content:
+            with open('.env', 'a') as env_file:
+                env_file.write(f"STRAVA_ACCESS_TOKEN={access_token}\n")
+                env_file.write(f"STRAVA_REFRESH_TOKEN={token['refresh_token']}\n")
+        else:
+            print("Tokens already exist in the .env file.")
+
+    return access_token
+
+
 def get_image_datetime(image_path):
-    image = PILImage.open(image_path)
+    image = Image.open(image_path)
     exif_data = image._getexif()
 
     if not exif_data:
@@ -153,123 +196,114 @@ def convert_time_to_seconds(time):
 
 class StravaApp(App):
     def build(self):
-        self.title = 'Treadmill to Strava'
+        self.root = BoxLayout(orientation='vertical')
 
         self.image_path = None
+        self.title_var = TextInput(text="Treadmill Run", multiline=False, size_hint_y=None, height=40)
+        self.description_var = TextInput(text="Uploaded from TreadmilltoStrava", multiline=False, size_hint_y=None, height=40)
 
-        self.default_title = "Treadmill Run"
-        self.default_description = "Uploaded from TreadmilltoStrava"
+        self.image_label = Label(text="No image selected", size_hint_y=None, height=200)
+        self.select_button = Button(text="Select Image", size_hint_y=None, height=40)
+        self.upload_button = Button(text="Upload to Strava", size_hint_y=None, height=40, disabled=True)
 
-        self.title_input = TextInput(text=self.default_title, multiline=False)
-        self.description_input = TextInput(text=self.default_description, multiline=False)
+        self.select_button.bind(on_press=self.select_image)
+        self.upload_button.bind(on_press=self.upload_to_strava)
 
-        self.time_input = TextInput(hint_text="Not available", multiline=False)
-        self.distance_input = TextInput(hint_text="Not available", multiline=False)
+        self.root.add_widget(self.image_label)
+        self.root.add_widget(self.select_button)
+        self.root.add_widget(self.upload_button)
 
-        self.select_button = Button(text="Select Image", on_press=self.select_image)
-        self.upload_button = Button(text="Upload to Strava", on_press=self.upload_to_strava, disabled=True)
-
-        self.image_label = Image()
-
-        layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        layout.add_widget(self.image_label)
-        layout.add_widget(self.select_button)
-        layout.add_widget(self.upload_button)
-
-        time_distance_layout = BoxLayout(orientation='horizontal')
-        time_distance_layout.add_widget(Label(text="Time:"))
-        time_distance_layout.add_widget(self.time_input)
-        time_distance_layout.add_widget(Label(text="Distance:"))
-        time_distance_layout.add_widget(self.distance_input)
-        layout.add_widget(time_distance_layout)
-
-        title_layout = BoxLayout(orientation='horizontal')
-        title_layout.add_widget(Label(text="Activity Title:"))
-        title_layout.add_widget(self.title_input)
-        layout.add_widget(title_layout)
-
-        description_layout = BoxLayout(orientation='horizontal')
-        description_layout.add_widget(Label(text="Activity Description:"))
-        description_layout.add_widget(self.description_input)
-        layout.add_widget(description_layout)
-
-        return layout
+        return self.root
 
     def select_image(self, instance):
-        filechooser = FileChooserIconView()
-        filechooser.bind(on_selection=lambda *x: self.load_image(filechooser.selection))
-        popup = Popup(title="Select Image", content=filechooser, size_hint=(0.9, 0.9))
+        file_chooser = FileChooserIconView()
+        
+         # Only show image files (e.g., jpg, png, etc.)
+        file_chooser.filters = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.gif', '*.tiff']
+        popup = Popup(title="Select Image", content=file_chooser, size_hint=(0.9, 0.9))
+        file_chooser.bind(on_submit=lambda *args: self.display_image(file_chooser, file_chooser.selection, popup))
         popup.open()
 
-    def load_image(self, selection):
-        if selection:
-            self.image_path = selection[0]
-            self.display_image(self.image_path)
-            threading.Thread(target=self.process_image, args=(self.image_path,)).start()
-
-    def display_image(self, image_path):
-        img = PILImage.open(image_path)
-        img.thumbnail((500, 500))  # Resize image for display
-        kivy_img = Image()
-        kivy_img.texture = self.pil_image_to_texture(img)
-        self.image_label.texture = kivy_img.texture
-
-    def pil_image_to_texture(self, pil_image):
-        from kivy.graphics.texture import Texture
-        import numpy as np
-        pil_image = pil_image.convert('RGBA')
-        data = np.array(pil_image)
-        texture = Texture.create(size=(pil_image.width, pil_image.height), colorfmt='rgba')
-        texture.blit_buffer(data.tobytes(), colorfmt='rgba', bufferfmt='ubyte')
-        return texture
+    def display_image(self, filechooser, selected_file, popup, *args):
+        print(f"Display image called. Selected files: {selected_file}")
+        if selected_file:
+            self.image_path = selected_file[0]
+            self.image_label.text = "Image Selected: " + self.image_path
+            popup.dismiss()
+            self.process_image(self.image_path)
+            
 
     def process_image(self, image_path):
+        threading.Thread(target=self.process_image_thread, args=(image_path,)).start()
+
+    def process_image_thread(self, image_path):
         try:
             text = extract_text_from_image(image_path)
-            if text:
-                time, distance = extract_time_and_distance(text)
-                self.time_input.text = time
-                self.distance_input.text = distance
-                self.upload_button.disabled = False
-            else:
-                self.show_error("Text not found in the image.")
+            time, distance = extract_time_and_distance(text)
+            title = self.title_var.text
+            description = self.description_var.text
+            
+            Clock.schedule_once(lambda dt: self.update_ui_with_time_and_distance(time, distance,title,description))
+
         except Exception as e:
             self.show_error(str(e))
+           
 
+    def update_ui_with_time_and_distance(self, time, distance,title,description):
+        self.root.add_widget(Label(text="Title:"))
+        self.title_input = TextInput(text=f"{title}", multiline=False, size_hint=(None,None), height=40, width=250)
+        self.root.add_widget(self.title_input)
+        self.root.add_widget(Label(text="Description:"))
+        self.description_input = TextInput(text=f"{description}", multiline=False, size_hint=(None,None), height=40, width=250)
+        self.root.add_widget(self.description_input)
+        self.root.add_widget(Label(text="Time:"))
+        self.time_input = TextInput(text=f"{time}", multiline=False, size_hint=(None,None), height=40, width=70)
+        self.root.add_widget(self.time_input)
+        self.root.add_widget(Label(text="Distance:"))
+        self.distance_input = TextInput(text=f"{distance}", multiline=False, size_hint=(None,None), height=40, width=70)
+        self.root.add_widget(self.distance_input)
+        
+        # Center the inputs horizontally within the BoxLayout
+        self.time_input.pos_hint = {'center_x': 0.5}  
+        self.distance_input.pos_hint = {'center_x': 0.5} 
+        self.title_input.pos_hint = {'center_x': 0.5}
+        self.description_input.pos_hint = {'center_x': 0.5}
+        
+        # Enable the upload button
+        self.upload_button.disabled = False
+        
     def upload_to_strava(self, instance):
         if self.image_path:
             try:
+                text = extract_text_from_image(self.image_path)
                 time = self.time_input.text
                 distance = self.distance_input.text
+                # time = "00:00"  # Default time if not available
+                # distance = "0.0"  # Default distance if not available
                 title = self.title_input.text
                 description = self.description_input.text
 
-                if time != "Not available" and distance != "Not available":
-                    threading.Thread(target=self.upload_thread, args=(time, distance, title, description)).start()
+                response = upload_activity_to_strava(time, distance, self.image_path, title, description)
+                if response and response.status_code == 201:
+                    self.show_success("Activity uploaded to Strava successfully!")
                 else:
-                    self.show_error("Invalid time or distance.")
+                    self.show_error("Failed to upload to Strava.")
             except Exception as e:
                 self.show_error(f"Failed to upload: {e}")
         else:
             self.show_error("No image selected.")
 
-    def upload_thread(self, time, distance, title, description):
-        try:
-            response = upload_activity_to_strava(time, distance, self.image_path, title, description)
-            if response and response.status_code == 201:
-                self.show_success("Activity uploaded to Strava successfully!")
-            else:
-                self.show_error("Failed to upload to Strava.")
-        except Exception as e:
-            self.show_error(str(e))
+    def show_error(self, message):
+        Clock.schedule_once(lambda dt: self.create_error_popup(message))
+    
+    def create_error_popup(self, message):
+        popup = Popup(title="Error", content=Label(text=message), size_hint=(0.6, 0.4))
+        popup.open()
 
     def show_success(self, message):
-        popup = Popup(title="Success", content=Label(text=message), size_hint=(0.6, 0.6))
+        popup = Popup(title="Success", content=Label(text=message), size_hint=(0.6, 0.4))
         popup.open()
 
-    def show_error(self, message):
-        popup = Popup(title="Error", content=Label(text=message), size_hint=(0.6, 0.6))
-        popup.open()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     StravaApp().run()
