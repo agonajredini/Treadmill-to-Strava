@@ -143,7 +143,12 @@ def upload_activity_to_strava(time,distance):
     if response.status_code == 201:
         print("Activity uploaded successfully!")
     else:
-        print(f"Failed to upload activity: {response.content}")
+        print(f"Failed to upload activity: {response.content , response.status_code, response.headers}")
+        remaining = response.headers.get('X-RateLimit-Remaining')
+        reset_time = response.headers.get('X-RateLimit-Reset')
+
+        print(f"Remaining requests: {remaining}")
+        print(f"Rate limit reset time: {reset_time}")
     
 def extract_text_from_image(image_path):
     client=vision.ImageAnnotatorClient()

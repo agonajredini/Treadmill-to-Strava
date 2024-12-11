@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox
 from tkinter import simpledialog
 from PIL import ImageTk, Image
 from google.cloud import vision
+import webbrowser
 import io
 import re
 import os
@@ -71,10 +72,18 @@ def get_strava_access_token():
     
     session = OAuth2Session(client_id=client_id, redirect_uri=redirect_url)
     session.scope = ["activity:write"]
-    auth_link = session.authorization_url(STRAVA_AUTH_URL)
-    print(f"Click Here to authorize the app: {auth_link[0]}")
+    auth_link = session.authorization_url(STRAVA_AUTH_URL) 
+    webbrowser.open(auth_link[0])
     
-    authorization_response = input('Enter the full callback URL: ')
+    newWin = tk.Tk()
+    newWin.withdraw()
+    
+    authorization_response = simpledialog.askstring("Authorization", 
+        "Please enter the full callback URL after you authorize the app in your browser:", parent=newWin)
+    if not authorization_response:
+        print("Authorization failed. No URL was provided.")
+        return None
+    
     token = session.fetch_token(
         token_url=STRAVA_TOKEN_URL,
         client_id=client_id,
@@ -94,6 +103,7 @@ def get_strava_access_token():
                 env_file.write(f"STRAVA_REFRESH_TOKEN={token['refresh_token']}\n")
         else:
             print("Tokens already exist in the .env file.")
+    newWin.destroy()
     return access_token
 
 
@@ -180,6 +190,7 @@ def convert_time_to_seconds(time):
     return int(minutes) * 60 + int(seconds)
 
 
+
 # Tkinter UI Application
 
 class StravaApp:
@@ -218,6 +229,24 @@ class StravaApp:
         self.uploading_label.pack(pady=10)
         self.uploading_label.pack_forget()  # Hide initially
 
+        # Time and Distance Entry Fields (Smaller size for numbers)
+        self.time_label = tk.Label(root, text="Time:")
+        self.time_entry = tk.Entry(root, width=10)  # Smaller width for time
+        self.time_entry.insert(0, "Not available")  # Default value for time
+        self.time_label.pack(pady=5)
+        self.time_entry.pack(pady=5)
+
+        self.distance_label = tk.Label(root, text="Distance:")
+        self.distance_entry = tk.Entry(root, width=10)  # Smaller width for distance
+        self.distance_entry.insert(0, "Not available") # Default value for distance
+        self.distance_label.pack(pady=5)
+        self.distance_entry.pack(pady=5)
+        
+        #Initially hide the time and distance fields
+        self.time_label.pack_forget()
+        self.time_entry.pack_forget()
+        self.distance_label.pack_forget()
+        self.distance_entry.pack_forget()
         
         # Title and Description Entry Fields (Initially hidden)
         self.title_label = tk.Label(root, text="Activity Title:")
@@ -231,13 +260,8 @@ class StravaApp:
         self.description_label.pack_forget()
         self.description_entry.pack_forget()
 
-        # Time and Distance Labels
-        self.time_label = tk.Label(root, text="Time: Not available")
-        self.time_label.pack(pady=5)
 
-        self.distance_label = tk.Label(root, text="Distance: Not available")
-        self.distance_label.pack(pady=5)
-
+        
 
     def select_image(self):
         file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.jpg *.jpeg *.png")])
@@ -286,15 +310,24 @@ class StravaApp:
             text = extract_text_from_image(image_path)
             if text:
                 time, distance = extract_time_and_distance(text)
-                self.time_label.config(text=f"Time: {time}")
-                self.distance_label.config(text=f"Distance: {distance}")
+                self.time_entry.delete(0, tk.END)  # Clear the previous value
+                self.time_entry.insert(0, time)  # Insert the detected time
+                self.distance_entry.delete(0, tk.END)  # Clear the previous value
+                self.distance_entry.insert(0, distance)  # Insert the detected distance
                 self.upload_button.config(state=tk.NORMAL)
 
+                #Show time and distance fields after image is processed
+                self.time_label.pack(pady=5)
+                self.time_entry.pack(pady=5)
+                self.distance_label.pack(pady=5)
+                self.distance_entry.pack(pady=5)
+                
                 # Show title and description fields after image is processed
                 self.title_label.pack(pady=5)
                 self.title_entry.pack(pady=5)
                 self.description_label.pack(pady=5)
                 self.description_entry.pack(pady=5)
+                
 
             else:
                 self.show_error("Text not found in the image.")
@@ -306,8 +339,8 @@ class StravaApp:
     def upload_to_strava(self):
         if self.image_path:
             try:
-                time = self.time_label.cget("text").split(": ")[1]
-                distance = self.distance_label.cget("text").split(": ")[1]
+                time = self.time_entry.get()  # Get time from the entry field
+                distance = self.distance_entry.get()  # Get distance from the entry field
                 title = self.title_var.get()  # Get title from the entry field
                 description = self.description_var.get()  # Get description from the entry field
                 
@@ -330,7 +363,7 @@ class StravaApp:
                 messagebox.showinfo("Success", "Activity uploaded to Strava successfully!")
                 self.reset_ui()
             else:
-                self.show_error("Failed to upload to Strava.")
+                self.show_error("Failed to upload to Strava." + response.text)
         finally:
             # Hide uploading label after upload is complete
             self.uploading_label.pack_forget()
@@ -341,7 +374,7 @@ class StravaApp:
     def reset_ui(self):
         # Reset the image display to show the default text
         self.image_label.config(image=None, text="No image selected")
-
+        
         # Clear the image reference to avoid lingering in memory
         self.image_label.image = None
         
@@ -350,10 +383,18 @@ class StravaApp:
         self.title_entry.pack_forget()
         self.description_label.pack_forget()
         self.description_entry.pack_forget()
+        
+        # Hide the time and distance entry fields
+        self.time_label.pack_forget()
+        self.time_entry.pack_forget()
+        self.distance_label.pack_forget()
+        self.distance_entry.pack_forget()
 
         # Reset the labels for time and distance
-        self.time_label.config(text="Time: Not available")
-        self.distance_label.config(text="Distance: Not available")
+        self.time_entry.delete(0, tk.END)
+        self.time_entry.insert(0, "Not available")
+        self.distance_entry.delete(0, tk.END)
+        self.distance_entry.insert(0, "Not available")
 
         # Clear title and description entry fields
         self.title_var.set(self.default_title)
@@ -367,11 +408,8 @@ class StravaApp:
         self.uploading_label.pack_forget()
 
 
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = StravaApp(root)
     root.mainloop()
-
-
-
-
