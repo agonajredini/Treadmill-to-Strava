@@ -1,0 +1,7 @@
+tkinter
+kivy
+google-cloud-vision
+requests
+requests-oauthlib
+pillow
+python-dotenv
