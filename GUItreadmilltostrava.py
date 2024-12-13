@@ -11,8 +11,8 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from requests_oauthlib import OAuth2Session
-from PIL.ExifTags import TAGS  # Import TAGS from PIL.ExifTags
-import threading  # Import threading for background tasks
+from PIL.ExifTags import TAGS
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -133,7 +133,7 @@ def extract_text_from_image(image_path):
     response = client.text_detection(image=image)
     texts = response.text_annotations
     if texts:
-        return texts[0].description
+        return texts[0].description.replace(" ", "")
     else:
         return 'No text found'
 

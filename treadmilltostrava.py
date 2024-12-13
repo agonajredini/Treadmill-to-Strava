@@ -186,5 +186,5 @@ def main(image_path):
             upload_activity_to_strava(time, distance)
 
 if __name__ == '__main__':
-    image_path = 'treadmill2.jpg'
+    image_path = 'pics\treadmill2.jpg'
     main(image_path)
