@@ -165,6 +165,13 @@ def upload_activity_to_strava(time, distance, image_path, title, description):
             print("Failed to refresh token. Please authenticate.")
             return
         
+        headers = {"Authorization": f"Bearer {access_token}"}
+        test_response = requests.get(f"{STRAVA_API_URL}/athlete", headers=headers)
+        
+        if test_response.status_code != 200:
+            print("Failed to authenticate with the refreshed token.")
+            return
+        
     # Extract the date and time when the picture was taken
     try:
         start_date_local = get_image_datetime(image_path)
