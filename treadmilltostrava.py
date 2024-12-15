@@ -165,7 +165,7 @@ def extract_text_from_image(image_path):
     response = client.text_detection(image=image)
     texts = response.text_annotations
     if texts:
-        return texts[0].description
+        return texts[0].description.replace(" ", "")
     else:
         return 'No text found'
     
