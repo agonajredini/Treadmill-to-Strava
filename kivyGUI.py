@@ -203,16 +203,20 @@ def convert_time_to_seconds(time):
     minutes, seconds = time.split(':')
     return int(minutes) * 60 + int(seconds)
 
-Window.size = (800, 900)
+#Window.size = (800, 900)
 class StravaApp(App):
     def build(self):
-        self.root = BoxLayout(orientation='vertical')
+        self.root = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        self.scroll_view = ScrollView(size_hint=(1, None), size=(Window.width, Window.height - 120))
+        self.scroll_layout = BoxLayout(orientation='vertical', padding=10, spacing=50, size_hint_y=None)
+        self.scroll_layout.bind(minimum_height=self.scroll_layout.setter('height'))
 
         self.image_path = None
         self.title_var = TextInput(text="Treadmill Run", multiline=False, size_hint_y=None, height=40)
         self.description_var = TextInput(text="Uploaded from TreadmilltoStrava", multiline=False, size_hint_y=None, height=40)
 
-        self.displayed_image = KivyImage(source=None, size_hint=(1, None), height=400)
+        self.displayed_image = KivyImage(source="pics\\noimage.PNG", size_hint=(1, None), height=400)
         self.image_label = Label(text="No image selected", size_hint_y=None, height=40)
         self.select_button = Button(text="Select Image", size_hint=(None,None), height=40, width=400)
         self.upload_button = Button(text="Upload to Strava", size_hint=(None,None), height=40, width=400, disabled=True)
@@ -220,13 +224,18 @@ class StravaApp(App):
         self.select_button.bind(on_press=self.select_image)
         self.upload_button.bind(on_press=self.upload_to_strava)
 
-        self.root.add_widget(self.displayed_image)
-        self.root.add_widget(self.image_label)
+        self.scroll_layout.add_widget(self.displayed_image)
+        self.scroll_layout.add_widget(self.image_label)
+        
+        self.scroll_view.add_widget(self.scroll_layout)
+        
+        self.root.add_widget(self.scroll_view)
         self.root.add_widget(self.select_button)
         self.root.add_widget(self.upload_button)
         
         self.select_button.pos_hint = {'center_x': 0.5}
         self.upload_button.pos_hint = {'center_x': 0.5}
+        
 
         return self.root
 
@@ -242,7 +251,7 @@ class StravaApp(App):
     def display_image(self, filechooser, selected_file, popup, *args):
         if selected_file:
             self.image_path = selected_file[0]
-            self.image_label.text = "Image Selected: " + self.image_path
+            self.image_label.text = ""
             img = Image.open(self.image_path)
             try:
                 exif = img._getexif()
@@ -297,42 +306,59 @@ class StravaApp(App):
             self.root.remove_widget(self.processing_label)
 
     def update_ui_with_time_and_distance(self, time, distance,title,description):
+        
+        main_layout = BoxLayout(orientation='vertical', size_hint=(None, None), width=400, padding=10, spacing=50)
+        
+        title_layout = BoxLayout(orientation='horizontal')
+        description_layout = BoxLayout(orientation='horizontal')
+        time_layout = BoxLayout(orientation='horizontal')
+        distance_layout = BoxLayout(orientation='horizontal')
+        
         if not hasattr(self, 'title_input'):
-            self.root.add_widget(Label(text="Title:"))
+            title_layout.add_widget(Label(text="Title:", size_hint=(None,None), height=40, width=90))
             self.title_input = TextInput(text=f"{title}", multiline=False, size_hint=(None,None), height=40, width=250)
-            self.root.add_widget(self.title_input)
+            title_layout.add_widget(self.title_input)
         else:
             self.title_input.text = f"{title}"
         if not hasattr(self, 'description_input'):
-            self.root.add_widget(Label(text="Description:"))
+            description_layout.add_widget(Label(text="Description:", size_hint=(None,None), height=40, width=90))
             self.description_input = TextInput(text=f"{description}", multiline=False, size_hint=(None,None), height=40, width=250)
-            self.root.add_widget(self.description_input)
+            description_layout.add_widget(self.description_input)
         else:
             self.description_input.text = f"{description}"
         if not hasattr(self, 'time_input'):
-            self.root.add_widget(Label(text="Time:"))
-            self.time_input = TextInput(text=f"{time}", multiline=False, size_hint=(None,None), height=40, width=70)
-            self.root.add_widget(self.time_input)
+            time_layout.add_widget(Label(text="Time:", size_hint=(None,None), height=40, width=90))
+            self.time_input = TextInput(text=f"{time}", multiline=False, size_hint=(None,None), height=40, width=90)
+            time_layout.add_widget(self.time_input)
         else:
             self.time_input.text = f"{time}"
         if not hasattr(self, 'distance_input'):
-            self.root.add_widget(Label(text="Distance:"))
+            distance_layout.add_widget(Label(text="Distance:", size_hint=(None,None), height=40, width=90))
             self.distance_input = TextInput(text=f"{distance}", multiline=False, size_hint=(None,None), height=40, width=70)
-            self.root.add_widget(self.distance_input)
+            distance_layout.add_widget(self.distance_input)
         else:
             self.distance_input.text = f"{distance}"
         
-        # Center the inputs horizontally within the BoxLayout
-        self.time_input.pos_hint = {'center_x': 0.5}  
-        self.distance_input.pos_hint = {'center_x': 0.5} 
-        self.title_input.pos_hint = {'center_x': 0.5}
-        self.description_input.pos_hint = {'center_x': 0.5}
+        # # Center the inputs horizontally within the BoxLayout
+        # self.time_input.pos_hint = {'center_x': 0.5}  
+        # self.distance_input.pos_hint = {'center_x': 0.5} 
+        # self.title_input.pos_hint = {'center_x': 0.5}
+        # self.description_input.pos_hint = {'center_x': 0.5}
         
         # Enable the upload button
         self.upload_button.disabled = False
         
+        main_layout.add_widget(title_layout)
+        main_layout.add_widget(description_layout)
+        main_layout.add_widget(time_layout)
+        main_layout.add_widget(distance_layout)
+        
+        self.scroll_layout.add_widget(main_layout)
+        main_layout.pos_hint = {'center_x': 0.5}
+        
     def upload_to_strava(self, instance):
         if self.image_path:
+            self.upload_button.disabled = True
             try:
                 text = extract_text_from_image(self.image_path)
                 time = self.time_input.text
@@ -349,6 +375,8 @@ class StravaApp(App):
                     self.show_error("Failed to upload to Strava.", response.content)
             except Exception as e:
                 self.show_error(f"Failed to upload: {e}")
+            finally:
+                self.upload_button.disabled = False
         else:
             self.show_error("No image selected.")
 
