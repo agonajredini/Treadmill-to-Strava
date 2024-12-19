@@ -60,9 +60,9 @@ def get_strava_access_token():
     
     client_id = os.getenv('STRAVA_CLIENT_ID')
     client_secret = os.getenv('STRAVA_CLIENT_SECRET')
-    redirect_url = "https://tekksparrow-programs.github.io/website/"
+    redirect_uri = os.getenv('STRAVA_REDIRECT_URI')
     
-    session = OAuth2Session(client_id=client_id, redirect_uri=redirect_url)
+    session = OAuth2Session(client_id=client_id, redirect_uri=redirect_uri)
     session.scope = ["activity:write"]
     auth_link = session.authorization_url(STRAVA_AUTH_URL)
     print(f"Click Here to authorize the app: {auth_link[0]}")
